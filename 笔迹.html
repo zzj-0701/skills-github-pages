@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>电子书笔迹插件</title>
+    <style>
+        /* 1. 基础容器样式：模拟电子书页面 + 书写层层级 */
+        .ebook-container {
+            position: relative;
+            width: 800px;
+            height: 1000px;
+            margin: 20px auto;
+            border: 1px solid #eee;
+            background: #fff; /* 模拟电子书背景 */
+            overflow: hidden;
+        }
+        /* 半透明书写层：悬浮在电子书上方 */
+        #drawCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.8; /* 核心：半透明，不遮挡电子书内容 */
+            cursor: crosshair;
+            border: none;
+        }
+        /* 模拟电子书内容（实际对接时替换为真实电子书） */
+        .ebook-content {
+            width: 100%;
+            height: 100%;
+            padding: 40px;
+            font-size: 18px;
+            line-height: 1.8;
+            color: #333;
+        }
+
+        /* 2. 常驻工具栏：底部固定，不隐藏 */
+        .toolbar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            background: rgba(255,255,255,0.9);
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            border-top: 1px solid #eee;
+            z-index: 10; /* 确保在书写层上方 */
+        }
+        .toolbar button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        #endBtn { /* 结束按钮：红色突出 */
+            background: #ff4444;
+            color: #fff;
+        }
+        #eraserBtn { /* 橡皮擦按钮 */
+            background: #f5f5f5;
+            color: #333;
+        }
+        .tool-option { /* 笔刷/颜色选择器 */
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* 3. 笔迹管理目录：左侧悬浮 */
+        .note-directory {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 220px;
+            height: 100%;
+            background: rgba(255,255,255,0.95);
+            border-right: 1px solid #eee;
+            z-index: 20; /* 最高层级，不被遮挡 */
+            overflow-y: auto;
+            transform: translateX(0);
+            transition: transform 0.3s ease;
+        }
+        .dir-header {
+            padding: 16px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .dir-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        #closeDirBtn { /* 目录收缩按钮 */
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+        }
+        .note-list {
+            padding: 10px;
+        }
+        .note-item { /* 单条笔迹条目 */
+            padding: 12px;
+            margin-bottom: 8px;
+            background: #fafafa;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .note-item:hover {
+            background: #f0f0f0;
+        }
+        .note-info {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            width: 150px;
+        }
+        .note-title {
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .note-time {
+            font-size: 12px;
+            color: #999;
+        }
+        .edit-title-btn { /* 编辑主题按钮 */
+            background: none;
+            border: none;
+            color: #666;
+            cursor: pointer;
+        }
+
+        /* 4. 保存弹窗/编辑主题弹窗 */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.3);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            display: none; /* 默认隐藏 */
+        }
+        .modal-content {
+            width: 350px;
+            background: #fff;
+            border-radius: 8px;
+            padding: 24px;
+        }
+        .modal-input {
+            width: 100%;
+            padding: 10px;
+            margin: 16px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .modal-btn-group {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+        .modal-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .confirm-btn {
+            background: #2196f3;
+            color: #fff;
+        }
+        .cancel-btn {
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        /* 5. 模拟页码切换（实际对接电子书页码） */
+        .page-switch {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 10;
+        }
+        .page-switch button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            background: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="ebook-container">
+        <!-- 1. 模拟电子书内容（实际替换为真实电子书） -->
+        <div class="ebook-content" id="ebookContent">
+            第1页： Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+        </div>
+
+        <!-- 2. 半透明书写层 -->
+        <canvas id="drawCanvas"></canvas>
+
+        <!-- 3. 常驻工具栏 -->
+        <div class="toolbar">
+            <div class="tool-option">
+                <span>笔刷：</span>
+                <select id="brushSize">
+                    <option value="2">细</option>
+                    <option value="4" selected>中</option>
+                    <option value="6">粗</option>
+                </select>
+            </div>
+            <div class="tool-option">
+                <span>颜色：</span>
+                <input type="color" id="brushColor" value="#000000">
+            </div>
+            <button id="eraserBtn">橡皮擦</button>
+            <button id="endBtn">结束书写</button>
+        </div>
+
+        <!-- 4. 笔迹管理目录 -->
+        <div class="note-directory" id="noteDirectory">
+            <div class="dir-header">
+                <div class="dir-title">我的笔迹</div>
+                <button id="closeDirBtn">→</button>
+            </div>
+            <div class="note-list" id="noteList">
+                <!-- 笔迹条目将通过JS动态生成 -->
+            </div>
+        </div>
+
+        <!-- 5. 页码切换（模拟） -->
+        <div class="page-switch">
+            <button id="prevPage">上一页</button>
+            <span id="currentPage">1</span>
+            <button id="nextPage">下一页</button>
+        </div>
+    </div>
+
+    <!-- 6. 保存弹窗 -->
+    <div class="modal" id="saveModal">
+        <div class="modal-content">
+            <h3>保存当前笔迹</h3>
+            <input type="text" class="modal-input" id="noteTitleInput" placeholder="输入主题（默认：第X页笔记）">
+            <div class="modal-btn-group">
+                <button class="modal-btn cancel-btn" id="cancelSaveBtn">取消</button>
+                <button class="modal-btn confirm-btn" id="confirmSaveBtn">确认保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 7. 编辑主题弹窗 -->
+    <div class="modal" id="editTitleModal">
+        <div class="modal-content">
+            <h3>修改主题</h3>
+            <input type="text" class="modal-input" id="editTitleInput">
+            <div class="modal-btn-group">
+                <button class="modal-btn cancel-btn" id="cancelEditBtn">取消</button>
+                <button class="modal-btn confirm-btn" id="confirmEditBtn">确认修改</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // -------------------------- 核心变量初始化 --------------------------
+        const canvas = document.getElementById('drawCanvas');
+        const ctx = canvas.getContext('2d');
+        let isDrawing = false; // 是否正在书写
+        let isErasing = false; // 是否开启橡皮擦
+        let currentPage = 1; // 当前电子书页码（实际对接时从电子书获取）
+        let currentNoteId = null; // 当前编辑的笔迹ID
+
+        // 初始化Canvas尺寸（与电子书容器一致）
+        function initCanvasSize() {
+            const container = document.querySelector('.ebook-container');
+            canvas.width = container.offsetWidth;
+            canvas.height = container.offsetHeight;
+        }
+        initCanvasSize();
+        window.addEventListener('resize', initCanvasSize);
+
+        // -------------------------- 1. 书写/橡皮擦功能 --------------------------
+        // 开始书写（鼠标/触摸事件兼容）
+        canvas.addEventListener('mousedown', startDraw);
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const pos = getCanvasPos(touch);
+            startDraw({ clientX: pos.x, clientY: pos.y });
+        });
+
+        // 书写中
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const pos = getCanvasPos(touch);
+            draw({ clientX: pos.x, clientY: pos.y });
+        });
+
+        // 结束书写
+        canvas.addEventListener('mouseup', endDraw);
+        canvas.addEventListener('mouseleave', endDraw);
+        canvas.addEventListener('touchend', endDraw);
+        canvas.addEventListener('touchcancel', endDraw);
+
+        // 开始书写：初始化画笔样式
+        function startDraw(e) {
+            isDrawing = true;
+            const pos = getCanvasPos(e);
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            ctx.lineCap = 'round'; // 笔触圆润
+            ctx.lineJoin = 'round';
+            // 区分画笔/橡皮擦（橡皮擦本质是白色画笔，覆盖笔迹）
+            if (isErasing) {
+                ctx.strokeStyle = '#fff'; // 与Canvas背景一致（模拟擦除）
+                ctx.lineWidth = 15; // 橡皮擦更粗，方便操作
+            } else {
+                ctx.strokeStyle = document.getElementById('brushColor').value;
+                ctx.lineWidth = document.getElementById('brushSize').value;
+            }
+        }
+
+        // 书写中：绘制线条
+        function draw(e) {
+            if (!isDrawing) return;
+            const pos = getCanvasPos(e);
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+        }
+
+        // 结束书写：重置状态
+        function endDraw() {
+            isDrawing = false;
+        }
+
+        // 获取鼠标/触摸在Canvas内的坐标（解决Canvas偏移问题）
+        function getCanvasPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+        }
+
+        // 橡皮擦按钮切换
+        document.getElementById('eraserBtn').addEventListener('click', () => {
+            isErasing = !isErasing;
+            const btn = document.getElementById('eraserBtn');
+            btn.style.background = isErasing ? '#e0e0e0' : '#f5f5f5';
+            btn.innerText = isErasing ? '退出橡皮擦' : '橡皮擦';
+        });
+
+        // -------------------------- 2. 笔迹保存功能 --------------------------
+        // 点击“结束书写”，打开保存弹窗
+        document.getElementById('endBtn').addEventListener('click', () => {
+            const defaultTitle = `第${currentPage}页笔记`;
+            document.getElementById('noteTitleInput').value = defaultTitle;
+            document.getElementById('saveModal').style.display = 'flex';
+        });
+
+        // 取消保存
+        document.getElementById('cancelSaveBtn').addEventListener('click', () => {
+            document.getElementById('saveModal').style.display = 'none';
+        });
+
+        // 确认保存：将笔迹转为base64，存入localStorage
+        document.getElementById('confirmSaveBtn').addEventListener('click', () => {
+            const noteTitle = document.getElementById('noteTitleInput').value.trim() || `第${currentPage}页笔记`;
+            const noteData = canvas.toDataURL('image/png'); // 笔迹转为图片base64
+            const saveTime = new Date().toLocaleString(); // 保存时间
+            const noteId = 'note_' + Date.now(); // 唯一ID（时间戳）
+
+            // 构造笔迹数据
+            const note = {
+                id: noteId,
+                title: noteTitle,
+                page: currentPage,
+                data: noteData,
+                time: saveTime
+            };
+
+            // 从localStorage读取已有笔迹，新增后再存入
+            let notes = JSON.parse(localStorage.getItem('ebookNotes')) || [];
+            notes.unshift(note); // 新增笔迹放最前面（时间倒序）
+            localStorage.setItem('ebookNotes', JSON.stringify(notes));
+
+            // 关闭弹窗，刷新目录，清空当前Canvas
+            document.getElementById('saveModal').style.display = 'none';
+            renderNoteDirectory();
+            clearCanvas();
+        });
+
+        // -------------------------- 3. 笔迹管理目录 --------------------------
+        // 渲染目录：从localStorage读取笔迹，生成条目
+        function renderNoteDirectory() {
+            const noteListEl = document.getElementById('noteList');
+            const notes = JSON.parse(localStorage.getItem('ebookNotes')) || [];
+            noteListEl.innerHTML = ''; // 清空旧列表
+
+            if (notes.length === 0) {
+                noteListEl.innerHTML = '<div style="padding:16px; color:#999; text-align:center;">暂无笔迹</div>';
+                return;
+            }
+
+            // 生成每条笔迹条目
+            notes.forEach(note => {
+                const noteItem = document.createElement('div');
+                noteItem.className = 'note-item';
+                noteItem.innerHTML = `
+                    <div class="note-info">
+                        <div class="note-title">${note.title}</div>
+                        <div class="note-time">${note.time} | 第${note.page}页</div>
+                    </div>
+                    <button class="edit-title-btn" data-id="${note.id}">✏️</button>
+                `;
+
+                // 点击条目：切换到对应页码，加载笔迹
+                noteItem.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('edit-title-btn')) return; // 点击编辑按钮不触发
+                    currentPage = note.page;
+                    document.getElementById('currentPage').innerText = currentPage;
+                    loadNote(note.id); // 加载该笔迹
+                    // 收缩目录（可选，提升阅读体验）
+                    document.getElementById('noteDirectory').style.transform = 'translateX(-100%)';
+                });
+
+                noteListEl.appendChild(noteItem);
+            });
+
+            // 绑定所有“编辑主题”按钮事件
+            document.querySelectorAll('.edit-title-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation(); // 阻止事件冒泡（不触发条目点击）
+                    currentNoteId = btn.getAttribute('data-id');
+                    const notes = JSON.parse(localStorage.getItem('ebookNotes')) || [];
+                    const currentNote = notes.find(n => n.id === currentNoteId);
+                    if (currentNote) {
+                        document.getElementById('editTitleInput').value = currentNote.title;
+                        document.getElementById('editTitleModal').style.display = 'flex';
+                    }
+                });
+            });
+        }
+
+        // 收缩/展开目录
+        document.getElementById('closeDirBtn').addEventListener('click', () => {
+            const dirEl = document.getElementById('noteDirectory');
+            const isClosed = dirEl.style.transform === 'translateX(-100%)';
+            dirEl.style.transform = isClosed ? 'translateX(0)' : 'translateX(-100%)';
+            document.getElementById('closeDirBtn').innerText = isClosed ? '→' : '←';
+        });
+
+        // 编辑主题：确认修改
+        document.getElementById('confirmEditBtn').addEventListener('click', () => {
+            const newTitle = document.getElementById('editTitleInput').value.trim();
+            if (!newTitle) return;
+
+            let notes = JSON.parse(localStorage.getItem('ebookNotes')) || [];
+            const noteIndex = notes.findIndex(n => n.id === currentNoteId);
+            if (noteIndex !== -1) {
+                notes[noteIndex].title = newTitle;
+                localStorage.setItem('ebookNotes', JSON.stringify(notes));
+                renderNoteDirectory(); // 刷新目录
+            }
+
+            document.getElementById('editTitleModal').style.display = 'none';
+        });
+
+        // 取消编辑主题
+        document.getElementById('cancelEditBtn').addEventListener('click', () => {
+            document.getElementById('editTitleModal').style.display = 'none';
+        });
+
+        // -------------------------- 4. 笔迹加载与清除 --------------------------
+        // 加载笔迹：根据ID从localStorage读取，显示到Canvas
+        function loadNote(noteId) {
+            const notes = JSON.parse(localStorage.getItem('ebookNotes')) || [];
+            const note = notes.find(n => n.id === noteId);
+            if (!note) return;
+
+            // 清空Canvas，绘制加载的笔迹
+            clearCanvas();
+            const img = new Image();
+            img.onload = function() {
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            };
+            img.src = note.data; // 加载base64图片
+        }
+
+        // 清空Canvas
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // -------------------------- 5. 模拟页码切换（实际对接电子书） --------------------------
+        document.getElementById('prevPage').addEventListener('click', () => {
+            if (currentPage > 1) {
+                currentPage--;
+                document.getElementById('currentPage').innerText = currentPage;
+                clearCanvas(); // 切换页码时清空当前笔迹
+                // 自动加载当前页的最新笔迹（可选功能）
+                const notes = JSON.parse(localStorage.getItem('ebookNotes')) || [];
+                const currentPageNote = notes.find(n => n.page === currentPage);
+                if (currentPageNote) {
+                    loadNote(currentPageNote.id);
+                }
+            }
+        });
+
+        document.getElementById('nextPage').addEventListener('click', () => {
+            currentPage++;
+            document.getElementById('currentPage').innerText = currentPage;
+            clearCanvas();
+            // 自动加载当前页的最新笔迹（可选功能）
+            const notes = JSON.parse(localStorage.getItem('ebookNotes')) || [];
+            const currentPageNote = notes.find(n => n.page === currentPage);
+            if (currentPageNote) {
+                loadNote(currentPageNote.id);
+            }
+        });
+
+        // -------------------------- 初始化：页面加载时渲染目录 --------------------------
+        window.addEventListener('load', renderNoteDirectory);
+    </script>
+</body>
+</html>
