@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>悬浮笔记插件</title>
+    <style>
+        /* 1. 悬浮触发按钮 */
+        .note-float-btn {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+        }
+        .note-float-btn:hover {
+            background: #2563eb;
+            transform: scale(1.05);
+        }
+
+        /* 2. 笔记面板（默认隐藏） */
+        .note-panel {
+            position: fixed;
+            bottom: 100px;
+            right: 30px;
+            width: 360px;
+            height: 520px;
+            border-radius: 16px;
+            background: white;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            z-index: 9998;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* 面板头部（标题+关闭按钮） */
+        .note-header {
+            padding: 14px 20px;
+            background: #3b82f6;
+            color: white;
+            font-weight: 600;
+            font-size: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .note-close-btn {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 20px;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* 面板主体（编辑区+历史区切换） */
+        .note-body {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* 左侧：历史笔记列表 */
+        .note-history {
+            width: 120px;
+            padding: 12px;
+            background: #f8fafc;
+            border-right: 1px solid #e2e8f0;
+            overflow-y: auto;
+        }
+        .history-title {
+            font-size: 14px;
+            color: #64748b;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        .history-item {
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: white;
+            margin-bottom: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background 0.2s;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .history-item:hover {
+            background: #e0f2fe;
+            color: #0284c7;
+        }
+        .history-item.active {
+            background: #dbeafe;
+            color: #1e40af;
+            font-weight: 500;
+        }
+
+        /* 右侧：笔记编辑区 */
+        .note-editor {
+            flex: 1;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .note-title-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            font-size: 15px;
+            font-weight: 500;
+            outline: none;
+            transition: border 0.3s;
+        }
+        .note-title-input:focus {
+            border-color: #3b82f6;
+        }
+        .note-content-input {
+            flex: 1;
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            resize: none;
+            font-size: 14px;
+            line-height: 1.5;
+            outline: none;
+            transition: border 0.3s;
+        }
+        .note-content-input:focus {
+            border-color: #3b82f6;
+        }
+
+        /* 面板底部（操作按钮） */
+        .note-footer {
+            padding: 12px 20px;
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+        }
+        .note-save-btn, .note-clear-btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: none;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .note-save-btn {
+            background: #3b82f6;
+            color: white;
+        }
+        .note-save-btn:hover {
+            background: #2563eb;
+        }
+        .note-clear-btn {
+            background: #f1f5f9;
+            color: #64748b;
+        }
+        .note-clear-btn:hover {
+            background: #e2e8f0;
+        }
+
+        /* 空状态提示 */
+        .empty-tip {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: #94a3b8;
+        }
+
+        /* 响应式适配手机 */
+        @media (max-width: 480px) {
+            .note-panel {
+                width: calc(100% - 60px);
+                height: 70vh;
+            }
+            .note-history {
+                width: 100px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 悬浮触发按钮 -->
+    <button class="note-float-btn" id="floatBtn">📝</button>
+
+    <!-- 笔记面板 -->
+    <div class="note-panel" id="notePanel">
+        <div class="note-header">
+            <span>悬浮笔记</span>
+            <button class="note-close-btn" id="closeBtn">×</button>
+        </div>
+        <div class="note-body">
+            <!-- 历史笔记列表 -->
+            <div class="note-history">
+                <div class="history-title">历史笔记</div>
+                <div id="historyList" class="history-list">
+                    <!-- 历史笔记项由JS动态生成 -->
+                    <div class="empty-tip">暂无笔记</div>
+                </div>
+            </div>
+            <!-- 笔记编辑区 -->
+            <div class="note-editor">
+                <input type="text" class="note-title-input" id="noteTitle" placeholder="输入笔记标题...">
+                <textarea class="note-content-input" id="noteContent" placeholder="输入笔记内容..."></textarea>
+            </div>
+        </div>
+        <div class="note-footer">
+            <button class="note-clear-btn" id="clearBtn">清空</button>
+            <button class="note-save-btn" id="saveBtn">保存笔记</button>
+        </div>
+    </div>
+
+    <script>
+        // 1. 元素获取
+        const floatBtn = document.getElementById('floatBtn');
+        const notePanel = document.getElementById('notePanel');
+        const closeBtn = document.getElementById('closeBtn');
+        const saveBtn = document.getElementById('saveBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const noteTitle = document.getElementById('noteTitle');
+        const noteContent = document.getElementById('noteContent');
+        const historyList = document.getElementById('historyList');
+
+        // 2. 全局变量（存储笔记数据）
+        let notes = JSON.parse(localStorage.getItem('floatNotes')) || [];
+        let currentNoteId = null; // 当前编辑的笔记ID
+
+        // 3. 面板显示/隐藏
+        floatBtn.addEventListener('click', () => {
+            notePanel.style.display = notePanel.style.display === 'flex' ? 'none' : 'flex';
+            renderHistoryList(); // 每次打开面板刷新历史列表
+        });
+        closeBtn.addEventListener('click', () => {
+            notePanel.style.display = 'none';
+        });
+
+        // 4. 保存笔记（新增/修改）
+        saveBtn.addEventListener('click', () => {
+            const title = noteTitle.value.trim() || '无标题笔记';
+            const content = noteContent.value.trim() || '无内容';
+            const timestamp = new Date().getTime(); // 用时间戳作为唯一ID
+
+            if (currentNoteId) {
+                // 修改已有笔记
+                notes = notes.map(note => 
+                    note.id === currentNoteId ? { ...note, title, content, updateTime: timestamp } : note
+                );
+            } else {
+                // 新增笔记
+                notes.unshift({ id: timestamp, title, content, createTime: timestamp, updateTime: timestamp });
+            }
+
+            // 保存到本地存储
+            localStorage.setItem('floatNotes', JSON.stringify(notes));
+            // 刷新历史列表+重置编辑区
+            renderHistoryList();
+            resetEditor();
+            // 提示保存成功
+            alert('笔记保存成功！');
+        });
+
+        // 5. 清空编辑区
+        clearBtn.addEventListener('click', () => {
+            resetEditor();
+            currentNoteId = null;
+        });
+
+        // 6. 渲染历史笔记列表
+        function renderHistoryList() {
+            if (notes.length === 0) {
+                historyList.innerHTML = '<div class="empty-tip">暂无笔记</div>';
+                return;
+            }
+
+            // 生成历史笔记项
+            historyList.innerHTML = notes.map(note => `
+                <div class="history-item ${currentNoteId === note.id ? 'active' : ''}" data-id="${note.id}">
+                    ${note.title}
+                </div>
+            `).join('');
+
+            // 给每个历史笔记项添加点击事件（加载笔记到编辑区）
+            document.querySelectorAll('.history-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const noteId = Number(item.dataset.id);
+                    const note = notes.find(n => n.id === noteId);
+                    if (note) {
+                        noteTitle.value = note.title;
+                        noteContent.value = note.content;
+                        currentNoteId = noteId;
+                        // 高亮当前选中的笔记
+                        document.querySelectorAll('.history-item').forEach(i => i.classList.remove('active'));
+                        item.classList.add('active');
+                    }
+                });
+            });
+        }
+
+        // 7. 重置编辑区
+        function resetEditor() {
+            noteTitle.value = '';
+            noteContent.value = '';
+            currentNoteId = null;
+        }
+
+        // 8. 初始化：首次打开页面加载历史列表（可选）
+        renderHistoryList();
+    </script>
+</body>
+</html>
